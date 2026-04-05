@@ -34,7 +34,14 @@ export const ddPlugin = new Elysia()
 
     const encoder = new TextEncoder()
 
+    // safeClose is hoisted so the cancel handler can reference it
+    let safeClose = () => {}
+
     const stream = new ReadableStream({
+      cancel() {
+        // Client disconnected — clean up subscription
+        safeClose()
+      },
       start(controller) {
         const enqueue = (event: SSEEvent) => {
           try {
@@ -75,24 +82,24 @@ export const ddPlugin = new Elysia()
 
         // Subscribe to live events
         let closed = false
+
+        safeClose = () => {
+          if (closed) return
+          closed = true
+          unsubscribe()
+          try { controller.close() } catch {}
+        }
+
         const unsubscribe = jobStore.subscribe(jobId, (event) => {
           if (closed) return
           enqueue(event)
           if (event.type === "report_complete" || event.type === "error") {
-            closed = true
-            unsubscribe()
-            controller.close()
+            safeClose()
           }
         })
 
         // Timeout safety — close after 10 minutes
-        setTimeout(() => {
-          if (!closed) {
-            closed = true
-            unsubscribe()
-            try { controller.close() } catch {}
-          }
-        }, 10 * 60 * 1000)
+        setTimeout(safeClose, 10 * 60 * 1000)
       },
     })
 

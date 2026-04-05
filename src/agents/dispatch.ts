@@ -85,7 +85,8 @@ export async function runDispatch(job: DDJob): Promise<void> {
       financialResult,
       riskResult,
       competitiveResult,
-      managementResult
+      managementResult,
+      (delta) => jobStore.emit(jobId, { type: "synthesis_delta", delta })
     )
 
     const reportId = uuidv4()

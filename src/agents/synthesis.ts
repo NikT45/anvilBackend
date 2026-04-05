@@ -50,7 +50,8 @@ export async function runSynthesisAgent(
   financial: string,
   risk: string,
   competitive: string,
-  management: string
+  management: string,
+  onDelta?: (delta: string) => void
 ): Promise<string> {
   const messages = [
     {
@@ -84,7 +85,10 @@ Produce the full report following the exact structure in your instructions.`,
     label: "synthesis",
     maxIterations: 1,
   })) {
-    if (event.type === "text_delta") output += event.delta
+    if (event.type === "text_delta") {
+      output += event.delta
+      onDelta?.(event.delta)
+    }
   }
   return output
 }
