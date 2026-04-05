@@ -8,6 +8,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
     "@elysiajs/cors": "^1.4.1",
+    "@tavily/core": "^0.7.2",
     "elysia": "latest",
     "uuid": "^13.0.0"
   },

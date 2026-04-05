@@ -1,5 +1,6 @@
 import { runAgent } from "./runner"
 import { edgarTools, edgarHandlers } from "../tools/edgar"
+import { tavilySearchTool, tavilyHandlers } from "../tools/tavily"
 
 const SYSTEM_PROMPT = `You are an executive assessment specialist focusing on management quality and corporate governance. Your task is to produce a Management & Governance section for a due diligence report.
 
@@ -32,8 +33,8 @@ export async function runManagementAgent(company: string, context: string): Prom
   let output = ""
   for await (const event of runAgent({
     systemPrompt: SYSTEM_PROMPT,
-    tools: edgarTools,
-    toolHandlers: edgarHandlers,
+    tools: [...edgarTools, tavilySearchTool],
+    toolHandlers: { ...edgarHandlers, ...tavilyHandlers },
     messages,
     model: "claude-haiku-4-5-20251001",
     label: "management",

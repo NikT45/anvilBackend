@@ -1,11 +1,12 @@
 import { runAgent } from "./runner"
 import { edgarTools, edgarHandlers } from "../tools/edgar"
+import { tavilySearchTool, tavilyHandlers } from "../tools/tavily"
 
 const SYSTEM_PROMPT = `You are a competitive intelligence analyst specializing in market positioning and strategic analysis. Your task is to produce a Competitive Landscape section for a due diligence report.
 
-Using the EDGAR tools and your training knowledge:
+Using EDGAR tools for filing data and web_search for current market intelligence:
 1. Search for the company's CIK and review their 10-K Business section (Item 1) for self-reported competitive positioning
-2. Draw on your knowledge of the company's industry, competitors, and market dynamics
+2. Use web_search to find current competitor news, market share data, analyst commentary, and recent industry developments
 
 Analyze and produce:
 - **Market Position**: Leader / Challenger / Niche player — with rationale
@@ -31,8 +32,8 @@ export async function runCompetitiveAgent(company: string, context: string): Pro
   let output = ""
   for await (const event of runAgent({
     systemPrompt: SYSTEM_PROMPT,
-    tools: edgarTools,
-    toolHandlers: edgarHandlers,
+    tools: [...edgarTools, tavilySearchTool],
+    toolHandlers: { ...edgarHandlers, ...tavilyHandlers },
     messages,
     model: "claude-haiku-4-5-20251001",
     label: "competitive",

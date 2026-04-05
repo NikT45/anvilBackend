@@ -1,5 +1,6 @@
 import { runAgent } from "./runner"
 import { edgarTools, edgarHandlers } from "../tools/edgar"
+import { tavilySearchTool, tavilyHandlers } from "../tools/tavily"
 
 const SYSTEM_PROMPT = `You are a risk analyst specializing in public company due diligence. Your task is to produce a Risk Assessment section for a due diligence report.
 
@@ -31,8 +32,8 @@ export async function runRiskAgent(company: string, context: string): Promise<st
   let output = ""
   for await (const event of runAgent({
     systemPrompt: SYSTEM_PROMPT,
-    tools: edgarTools,
-    toolHandlers: edgarHandlers,
+    tools: [...edgarTools, tavilySearchTool],
+    toolHandlers: { ...edgarHandlers, ...tavilyHandlers },
     messages,
     model: "claude-haiku-4-5-20251001",
     label: "risk",
