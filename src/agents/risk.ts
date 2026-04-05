@@ -1,44 +1,82 @@
+import type Anthropic from "@anthropic-ai/sdk"
 import { runAgent } from "./runner"
 import { edgarTools, edgarHandlers } from "../tools/edgar"
 import { tavilySearchTool, tavilyHandlers } from "../tools/tavily"
+import type { CompanyProfile, RiskSection } from "../lib/types"
 
-const SYSTEM_PROMPT = `You are a risk analyst specializing in public company due diligence. Your task is to produce a Risk Assessment section for a due diligence report.
+const SYSTEM_PROMPT = `You are a risk analyst producing the Risk Assessment section of a due diligence report.
 
-Using the EDGAR tools:
-1. Search for the company's CIK
-2. Retrieve their most recent 10-K filing
-3. Extract and analyze the Risk Factors section (Item 1A)
-4. Also review any recent 8-K filings for material events
+RESEARCH PROCESS:
+- For PUBLIC companies, pull the most recent 10-K Risk Factors (Item 1A) via edgar_get_filing_text, and check 8-K filings for material events.
+- Use web_search for current litigation, regulatory actions, customer concentration, supply chain issues, and red-flag news.
 
-Assess and score risks across four categories (Low / Medium / High / Critical):
-- **Regulatory**: pending litigation, SEC investigations, industry regulation trends, compliance gaps
-- **Financial**: leverage/debt load, liquidity, revenue concentration, customer churn, covenant risks
-- **Operational**: key-person dependency, supply chain exposure, technology/cybersecurity risks, execution risk
-- **Market**: TAM shrinkage, macro headwinds, pricing power erosion, competitive disruption
+ANALYSIS REQUIRED — assess risks across 4 categories, each with severity (Low/Medium/High/Critical):
+- **Regulatory**: litigation, investigations, compliance gaps, industry regulation
+- **Financial**: leverage, liquidity, customer concentration, covenant risk, burn rate (for private)
+- **Operational**: key-person, supply chain, cybersecurity, execution, technology risk
+- **Market**: TAM erosion, macro headwinds, pricing power loss, disruption
 
-Output a complete markdown section starting with:
-## Risk Assessment
+Produce 6-10 specific risk factors total. Be concrete — cite actual events, filings, or data. Flag any CRITICAL risks in redFlags.
 
-Include a risk matrix table (Risk | Category | Severity | Description) followed by narrative for each category. Flag any Critical risks prominently.`
+Assess overallRiskLevel holistically.
 
-export async function runRiskAgent(company: string, context: string): Promise<string> {
+When finished, call submit_risk_analysis.`
+
+const submitTool: Anthropic.Tool = {
+  name: "submit_risk_analysis",
+  description: "Submit structured risk analysis.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      summary: { type: "string" },
+      factors: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            category: { type: "string", enum: ["Regulatory", "Financial", "Operational", "Market"] },
+            name: { type: "string", description: "Short risk name e.g. 'Customer concentration'" },
+            severity: { type: "string", enum: ["Low", "Medium", "High", "Critical"] },
+            description: { type: "string" },
+            mitigation: { type: "string" },
+          },
+          required: ["category", "name", "severity", "description"],
+        },
+        description: "6-10 specific risks",
+      },
+      redFlags: { type: "array", items: { type: "string" }, description: "Critical concerns demanding attention" },
+      overallRiskLevel: { type: "string", enum: ["Low", "Medium", "High", "Critical"] },
+    },
+    required: ["summary", "factors", "redFlags", "overallRiskLevel"],
+  },
+}
+
+export async function runRiskAgent(profile: CompanyProfile, context: string): Promise<RiskSection> {
+  const profileLine = profile.isPublic
+    ? `Company: ${profile.name} (${profile.ticker ?? ""}, CIK: ${profile.cik ?? "unknown"}) — PUBLIC`
+    : `Company: ${profile.name} — PRIVATE`
+
   const messages = [
     {
       role: "user" as const,
-      content: `Conduct a risk assessment for: **${company}**\n\nContext: ${context || "General due diligence"}`,
+      content: `${profileLine}\nDescription: ${profile.description}\n\nContext: ${context || "General DD"}\n\nConduct risk assessment and submit structured findings.`,
     },
   ]
 
-  let output = ""
+  let result: RiskSection | null = null
   for await (const event of runAgent({
     systemPrompt: SYSTEM_PROMPT,
-    tools: [...edgarTools, tavilySearchTool],
-    toolHandlers: { ...edgarHandlers, ...tavilyHandlers },
+    tools: profile.isPublic ? [...edgarTools, tavilySearchTool] : [tavilySearchTool],
+    toolHandlers: profile.isPublic ? { ...edgarHandlers, ...tavilyHandlers } : tavilyHandlers,
     messages,
     model: "claude-haiku-4-5-20251001",
     label: "risk",
+    maxIterations: 10,
+    terminalTool: submitTool,
   })) {
-    if (event.type === "text_delta") output += event.delta
+    if (event.type === "submit") result = event.data as RiskSection
   }
-  return output
+
+  if (!result) throw new Error("Risk agent did not submit structured analysis")
+  return result
 }

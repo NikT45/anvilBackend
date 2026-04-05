@@ -3,20 +3,18 @@ import { v4 as uuidv4 } from "uuid"
 import { jobStore } from "../lib/job-store"
 import { runDispatch } from "../agents/dispatch"
 import { formatSSE } from "../lib/sse"
-import type { SSEEvent } from "../lib/types"
+import type { SSEEvent, AgentName } from "../lib/types"
+
+const AGENT_ORDER: AgentName[] = ["intake", "financial", "market", "risk", "management", "synthesis"]
 
 export const ddPlugin = new Elysia()
-  // POST /dd — manually trigger a DD report
   .post(
     "/dd",
     ({ body }) => {
       const { company, context = "" } = body
       const ddJobId = uuidv4()
       const job = jobStore.create(ddJobId, company, context)
-
-      // Fire and forget
       runDispatch(job).catch(console.error)
-
       return { ddJobId, company, status: "started" }
     },
     {
@@ -27,19 +25,15 @@ export const ddPlugin = new Elysia()
     }
   )
 
-  // GET /dd/:jobId/stream — SSE progress stream
   .get("/dd/:jobId/stream", ({ params }) => {
     const { jobId } = params
     const job = jobStore.get(jobId)
 
     const encoder = new TextEncoder()
-
-    // safeClose is hoisted so the cancel handler can reference it
     let safeClose = () => {}
 
     const stream = new ReadableStream({
       cancel() {
-        // Client disconnected — clean up subscription
         safeClose()
       },
       start(controller) {
@@ -47,42 +41,41 @@ export const ddPlugin = new Elysia()
           try {
             controller.enqueue(encoder.encode(formatSSE(event)))
           } catch {
-            // stream already closed (client disconnected or job finished)
+            // stream closed
           }
         }
 
-        // If job doesn't exist, error immediately
         if (!job) {
           enqueue({ type: "error", message: `Job ${jobId} not found` })
           controller.close()
           return
         }
 
-        // If already complete, send the report immediately
-        if (job.status === "complete" && job.reportMarkdown) {
+        // Replay if already complete
+        if (job.status === "complete" && job.report) {
           enqueue({ type: "started", jobId, company: job.company })
-          for (const agent of ["financial", "risk", "competitive", "management"] as const) {
+          if (job.companyProfile) enqueue({ type: "intake_complete", profile: job.companyProfile })
+          for (const agent of AGENT_ORDER) {
             enqueue({
               type: "agent_progress",
               agent,
               status: job.agents[agent].status,
-              overallPct: 75,
+              overallPct: 100,
             })
           }
           enqueue({ type: "synthesis_started" })
           enqueue({
             type: "report_complete",
             reportId: uuidv4(),
-            markdown: job.reportMarkdown,
+            report: job.report,
             company: job.company,
           })
           controller.close()
           return
         }
 
-        // Subscribe to live events
+        // Subscribe live
         let closed = false
-
         safeClose = () => {
           if (closed) return
           closed = true
@@ -98,8 +91,8 @@ export const ddPlugin = new Elysia()
           }
         })
 
-        // Timeout safety — close after 10 minutes
-        setTimeout(safeClose, 10 * 60 * 1000)
+        // Timeout safety — 15 minutes
+        setTimeout(safeClose, 15 * 60 * 1000)
       },
     })
 

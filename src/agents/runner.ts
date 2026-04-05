@@ -9,11 +9,15 @@ export async function* runAgent(params: RunAgentParams): AsyncGenerator<AgentEve
     toolHandlers,
     messages,
     model = "claude-sonnet-4-6",
-    maxIterations = 10,
+    maxIterations = 12,
+    maxTokens = 8192,
+    terminalTool,
   } = params
 
   const agentLabel = params.label ?? model
-  console.log(`[runner:${agentLabel}] starting — ${messages.length} message(s), ${tools.length} tool(s)`)
+  // Combine research tools with terminal tool (if provided)
+  const allTools = terminalTool ? [...tools, terminalTool] : tools
+  console.log(`[runner:${agentLabel}] starting — ${messages.length} msg(s), ${allTools.length} tool(s)${terminalTool ? ` (terminal: ${terminalTool.name})` : ""}`)
 
   const history: Anthropic.MessageParam[] = [...messages]
   let iterations = 0
@@ -25,36 +29,25 @@ export async function* runAgent(params: RunAgentParams): AsyncGenerator<AgentEve
 
     const stream = await anthropic.messages.stream({
       model,
-      max_tokens: 8096,
+      max_tokens: maxTokens,
       system: systemPrompt,
-      tools: tools.length > 0 ? tools : undefined,
+      tools: allTools.length > 0 ? allTools : undefined,
       messages: history,
     })
 
-    const toolUseBlocks: Anthropic.ToolUseBlock[] = []
-
     for await (const chunk of stream) {
-      if (
-        chunk.type === "content_block_delta" &&
-        chunk.delta.type === "text_delta"
-      ) {
+      if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
         fullText += chunk.delta.text
         yield { type: "text_delta", delta: chunk.delta.text }
-      }
-      if (chunk.type === "content_block_start" && chunk.content_block.type === "tool_use") {
-        toolUseBlocks.push({ ...chunk.content_block, input: {} })
-      }
-      if (chunk.type === "content_block_delta" && chunk.delta.type === "input_json_delta") {
-        // accumulate — handled via finalMessage below
       }
     }
 
     const finalMessage = await stream.finalMessage()
-
-    // Append assistant turn to history
     history.push({ role: "assistant", content: finalMessage.content })
 
-    console.log(`[runner:${agentLabel}] stop_reason: ${finalMessage.stop_reason}, tokens: ${finalMessage.usage.input_tokens}in/${finalMessage.usage.output_tokens}out`)
+    console.log(
+      `[runner:${agentLabel}] stop: ${finalMessage.stop_reason}, tokens: ${finalMessage.usage.input_tokens}in/${finalMessage.usage.output_tokens}out`
+    )
 
     if (finalMessage.stop_reason === "end_turn") {
       console.log(`[runner:${agentLabel}] done — ${fullText.length} chars`)
@@ -64,14 +57,15 @@ export async function* runAgent(params: RunAgentParams): AsyncGenerator<AgentEve
 
     if (finalMessage.stop_reason === "tool_use") {
       const toolResults: Anthropic.ToolResultBlockParam[] = []
+      let terminalCalled = false
 
       for (const block of finalMessage.content) {
         if (block.type !== "tool_use") continue
 
-        // Special case: DD trigger — yield event, inject synthetic result
+        // DD trigger special case
         if (block.name === "trigger_dd_report") {
           const input = block.input as { company: string; context?: string }
-          console.log(`[runner:${agentLabel}] trigger_dd_report fired for "${input.company}"`)
+          console.log(`[runner:${agentLabel}] trigger_dd_report for "${input.company}"`)
           yield {
             type: "dd_trigger",
             company: input.company,
@@ -81,13 +75,26 @@ export async function* runAgent(params: RunAgentParams): AsyncGenerator<AgentEve
           toolResults.push({
             type: "tool_result",
             tool_use_id: block.id,
-            content: "Due diligence report generation has been initiated. Inform the user it will be ready shortly.",
+            content: "Due diligence report generation initiated. Inform the user it will be ready shortly.",
           })
           continue
         }
 
-        // Normal tool call
-        console.log(`[runner:${agentLabel}] tool call: ${block.name}`, JSON.stringify(block.input).slice(0, 120))
+        // Terminal tool — structured output submission
+        if (terminalTool && block.name === terminalTool.name) {
+          console.log(`[runner:${agentLabel}] terminal tool called: ${block.name}`)
+          yield { type: "submit", data: block.input }
+          terminalCalled = true
+          toolResults.push({
+            type: "tool_result",
+            tool_use_id: block.id,
+            content: "Analysis submitted successfully.",
+          })
+          continue
+        }
+
+        // Normal tool
+        console.log(`[runner:${agentLabel}] tool: ${block.name}`, JSON.stringify(block.input).slice(0, 120))
         const handler = toolHandlers[block.name]
         if (!handler) {
           toolResults.push({
@@ -102,7 +109,7 @@ export async function* runAgent(params: RunAgentParams): AsyncGenerator<AgentEve
         try {
           const result = await handler(block.input)
           const resultStr = typeof result === "string" ? result : JSON.stringify(result)
-          console.log(`[runner:${agentLabel}] tool result: ${block.name} → ${resultStr.slice(0, 120)}…`)
+          console.log(`[runner:${agentLabel}] → ${resultStr.slice(0, 120)}…`)
           toolResults.push({
             type: "tool_result",
             tool_use_id: block.id,
@@ -120,10 +127,17 @@ export async function* runAgent(params: RunAgentParams): AsyncGenerator<AgentEve
       }
 
       history.push({ role: "user", content: toolResults })
+
+      // If terminal tool was called, end loop after submitting tool_result
+      if (terminalCalled) {
+        console.log(`[runner:${agentLabel}] done via terminal tool`)
+        yield { type: "done", fullText }
+        return
+      }
+
       continue
     }
 
-    // Unexpected stop reason
     yield { type: "done", fullText }
     return
   }
