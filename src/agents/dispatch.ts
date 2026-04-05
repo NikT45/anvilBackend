@@ -7,13 +7,11 @@ import { jobStore } from "../lib/job-store"
 import { v4 as uuidv4 } from "uuid"
 import type { DDJob, AgentName } from "../lib/types"
 
-// Progress math: each of 4 agents = 18.75%, synthesis = 25% (starts at 75%)
+const AGENT_ORDER: AgentName[] = ["financial", "risk", "competitive", "management"]
+// 4 agents × 18.75% = 75%, synthesis = 25%
 const AGENT_SHARE = 18.75
-const AGENT_NAMES: AgentName[] = ["financial", "risk", "competitive", "management"]
 
-function agentOverallPct(agentIndex: number, agentInternalPct: number): number {
-  return Math.round(agentIndex * AGENT_SHARE + agentInternalPct * (AGENT_SHARE / 100))
-}
+type AgentRunner = () => Promise<string>
 
 export async function runDispatch(job: DDJob): Promise<void> {
   const { jobId, company, context } = job
@@ -21,58 +19,59 @@ export async function runDispatch(job: DDJob): Promise<void> {
   jobStore.updateStatus(jobId, "running")
   jobStore.emit(jobId, { type: "started", jobId, company })
 
-  // Run all 4 agents — staggered by 3s each to avoid TPM rate limits
-  const agentRunners: [AgentName, () => Promise<string>][] = [
+  const runners: [AgentName, AgentRunner][] = [
     ["financial", () => runFinancialAgent(company, context)],
     ["risk", () => runRiskAgent(company, context)],
     ["competitive", () => runCompetitiveAgent(company, context)],
     ["management", () => runManagementAgent(company, context)],
   ]
 
-  const results = await Promise.allSettled(
-    agentRunners.map(async ([name, runner], index) => {
-      // Stagger starts: 0s, 3s, 6s, 9s
-      if (index > 0) await new Promise((r) => setTimeout(r, index * 3000))
+  const sections: Record<AgentName, string> = {
+    financial: "",
+    risk: "",
+    competitive: "",
+    management: "",
+  }
 
-      jobStore.updateAgent(jobId, name, "running")
+  // Run agents sequentially to avoid rate limits
+  for (let i = 0; i < runners.length; i++) {
+    const [name, runner] = runners[i]
+    const startPct = Math.round(i * AGENT_SHARE)
+
+    jobStore.updateAgent(jobId, name, "running")
+    jobStore.emit(jobId, {
+      type: "agent_progress",
+      agent: name,
+      status: "running",
+      overallPct: startPct,
+    })
+    console.log(`[dispatch] agent:${name} started`)
+
+    try {
+      const output = await runner()
+      console.log(`[dispatch] agent:${name} done — ${output.length} chars`)
+      sections[name] = output
+      jobStore.updateAgent(jobId, name, "done", output)
       jobStore.emit(jobId, {
         type: "agent_progress",
         agent: name,
-        status: "running",
-        overallPct: agentOverallPct(index, 0),
+        status: "done",
+        overallPct: Math.round((i + 1) * AGENT_SHARE),
+        preview: output.slice(0, 200),
       })
-
-      try {
-        console.log(`[dispatch] agent:${name} started`)
-        const output = await runner()
-        console.log(`[dispatch] agent:${name} done — ${output.length} chars`)
-        jobStore.updateAgent(jobId, name, "done", output)
-        jobStore.emit(jobId, {
-          type: "agent_progress",
-          agent: name,
-          status: "done",
-          overallPct: agentOverallPct(index, 100),
-          preview: output.slice(0, 200),
-        })
-        return output
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        console.error(`[dispatch] agent:${name} error — ${msg}`)
-        jobStore.updateAgent(jobId, name, "error", "", msg)
-        jobStore.emit(jobId, {
-          type: "agent_progress",
-          agent: name,
-          status: "error",
-          overallPct: agentOverallPct(index, 100),
-        })
-        return `## ${name.charAt(0).toUpperCase() + name.slice(1)} Analysis\n\n*Analysis unavailable: ${msg}*`
-      }
-    })
-  )
-
-  const [financialResult, riskResult, competitiveResult, managementResult] = results.map((r) =>
-    r.status === "fulfilled" ? r.value : `*Section unavailable*`
-  )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[dispatch] agent:${name} error — ${msg}`)
+      sections[name] = `## ${name.charAt(0).toUpperCase() + name.slice(1)} Analysis\n\n*Analysis unavailable: ${msg}*`
+      jobStore.updateAgent(jobId, name, "error", "", msg)
+      jobStore.emit(jobId, {
+        type: "agent_progress",
+        agent: name,
+        status: "error",
+        overallPct: Math.round((i + 1) * AGENT_SHARE),
+      })
+    }
+  }
 
   // Synthesis
   console.log(`[dispatch] all agents complete — starting synthesis`)
@@ -82,10 +81,10 @@ export async function runDispatch(job: DDJob): Promise<void> {
   try {
     const report = await runSynthesisAgent(
       company,
-      financialResult,
-      riskResult,
-      competitiveResult,
-      managementResult,
+      sections.financial,
+      sections.risk,
+      sections.competitive,
+      sections.management,
       (delta) => jobStore.emit(jobId, { type: "synthesis_delta", delta })
     )
 
