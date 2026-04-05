@@ -35,7 +35,7 @@ export async function runManagementAgent(company: string, context: string): Prom
     tools: edgarTools,
     toolHandlers: edgarHandlers,
     messages,
-    model: "claude-sonnet-4-6",
+    model: "claude-haiku-4-5-20251001",
     label: "management",
   })) {
     if (event.type === "text_delta") output += event.delta
