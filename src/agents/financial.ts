@@ -34,6 +34,7 @@ export async function runFinancialAgent(company: string, context: string): Promi
     toolHandlers: edgarHandlers,
     messages,
     model: "claude-sonnet-4-6",
+    label: "financial",
   })) {
     if (event.type === "text_delta") output += event.delta
   }

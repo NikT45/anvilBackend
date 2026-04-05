@@ -10,6 +10,8 @@ export const chatPlugin = new Elysia().post(
   "/chat",
   ({ body }) => {
     const messages = body.messages as Message[]
+    const lastMsg = messages[messages.length - 1]?.content?.slice(0, 80) ?? ""
+    console.log(`[chat] POST /chat — ${messages.length} message(s), last: "${lastMsg}"`)
 
     return createSSEStream(async (emit) => {
       for await (const event of runChatAgent(messages)) {
@@ -17,6 +19,7 @@ export const chatPlugin = new Elysia().post(
           emit({ type: "text_delta", delta: event.delta })
         } else if (event.type === "dd_trigger") {
           const ddJobId = uuidv4()
+          console.log(`[chat] dd_trigger → company="${event.company}", jobId=${ddJobId}`)
           const job = jobStore.create(ddJobId, event.company, event.context)
 
           // Fire DD pipeline in background — do not await
@@ -24,8 +27,10 @@ export const chatPlugin = new Elysia().post(
 
           emit({ type: "dd_triggered", company: event.company, ddJobId })
         } else if (event.type === "done") {
+          console.log(`[chat] done`)
           emit({ type: "done" })
         } else if (event.type === "error") {
+          console.error(`[chat] error: ${event.message}`)
           emit({ type: "error", message: event.message })
         }
       }

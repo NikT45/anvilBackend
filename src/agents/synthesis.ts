@@ -81,6 +81,7 @@ Produce the full report following the exact structure in your instructions.`,
     toolHandlers: {},
     messages,
     model: "claude-opus-4-6",
+    label: "synthesis",
     maxIterations: 1,
   })) {
     if (event.type === "text_delta") output += event.delta

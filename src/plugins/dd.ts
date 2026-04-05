@@ -37,7 +37,11 @@ export const ddPlugin = new Elysia()
     const stream = new ReadableStream({
       start(controller) {
         const enqueue = (event: SSEEvent) => {
-          controller.enqueue(encoder.encode(formatSSE(event)))
+          try {
+            controller.enqueue(encoder.encode(formatSSE(event)))
+          } catch {
+            // stream already closed (client disconnected or job finished)
+          }
         }
 
         // If job doesn't exist, error immediately

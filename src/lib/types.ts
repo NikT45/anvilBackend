@@ -22,6 +22,7 @@ export interface RunAgentParams {
   messages: Anthropic.MessageParam[]
   model?: string
   maxIterations?: number
+  label?: string
 }
 
 // ─── DD Job ───────────────────────────────────────────────────────────────────

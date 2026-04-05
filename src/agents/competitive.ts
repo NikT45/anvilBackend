@@ -35,6 +35,7 @@ export async function runCompetitiveAgent(company: string, context: string): Pro
     toolHandlers: edgarHandlers,
     messages,
     model: "claude-sonnet-4-6",
+    label: "competitive",
   })) {
     if (event.type === "text_delta") output += event.delta
   }

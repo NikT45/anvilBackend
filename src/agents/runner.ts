@@ -12,12 +12,16 @@ export async function* runAgent(params: RunAgentParams): AsyncGenerator<AgentEve
     maxIterations = 10,
   } = params
 
+  const agentLabel = params.label ?? model
+  console.log(`[runner:${agentLabel}] starting — ${messages.length} message(s), ${tools.length} tool(s)`)
+
   const history: Anthropic.MessageParam[] = [...messages]
   let iterations = 0
 
   while (iterations < maxIterations) {
     iterations++
     let fullText = ""
+    console.log(`[runner:${agentLabel}] iteration ${iterations}`)
 
     const stream = await anthropic.messages.stream({
       model,
@@ -50,7 +54,10 @@ export async function* runAgent(params: RunAgentParams): AsyncGenerator<AgentEve
     // Append assistant turn to history
     history.push({ role: "assistant", content: finalMessage.content })
 
+    console.log(`[runner:${agentLabel}] stop_reason: ${finalMessage.stop_reason}, tokens: ${finalMessage.usage.input_tokens}in/${finalMessage.usage.output_tokens}out`)
+
     if (finalMessage.stop_reason === "end_turn") {
+      console.log(`[runner:${agentLabel}] done — ${fullText.length} chars`)
       yield { type: "done", fullText }
       return
     }
@@ -64,6 +71,7 @@ export async function* runAgent(params: RunAgentParams): AsyncGenerator<AgentEve
         // Special case: DD trigger — yield event, inject synthetic result
         if (block.name === "trigger_dd_report") {
           const input = block.input as { company: string; context?: string }
+          console.log(`[runner:${agentLabel}] trigger_dd_report fired for "${input.company}"`)
           yield {
             type: "dd_trigger",
             company: input.company,
@@ -79,6 +87,7 @@ export async function* runAgent(params: RunAgentParams): AsyncGenerator<AgentEve
         }
 
         // Normal tool call
+        console.log(`[runner:${agentLabel}] tool call: ${block.name}`, JSON.stringify(block.input).slice(0, 120))
         const handler = toolHandlers[block.name]
         if (!handler) {
           toolResults.push({
@@ -92,12 +101,15 @@ export async function* runAgent(params: RunAgentParams): AsyncGenerator<AgentEve
 
         try {
           const result = await handler(block.input)
+          const resultStr = typeof result === "string" ? result : JSON.stringify(result)
+          console.log(`[runner:${agentLabel}] tool result: ${block.name} → ${resultStr.slice(0, 120)}…`)
           toolResults.push({
             type: "tool_result",
             tool_use_id: block.id,
-            content: typeof result === "string" ? result : JSON.stringify(result),
+            content: resultStr,
           })
         } catch (err) {
+          console.error(`[runner:${agentLabel}] tool error: ${block.name}`, err)
           toolResults.push({
             type: "tool_result",
             tool_use_id: block.id,

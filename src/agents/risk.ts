@@ -35,6 +35,7 @@ export async function runRiskAgent(company: string, context: string): Promise<st
     toolHandlers: edgarHandlers,
     messages,
     model: "claude-sonnet-4-6",
+    label: "risk",
   })) {
     if (event.type === "text_delta") output += event.delta
   }

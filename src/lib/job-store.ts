@@ -31,7 +31,12 @@ class DDJobStore {
   }
 
   emit(jobId: string, event: SSEEvent) {
-    this.emitters.get(jobId)?.emit("event", event)
+    try {
+      this.emitters.get(jobId)?.emit("event", event)
+    } catch (err) {
+      // listener threw (e.g. closed SSE stream) — don't propagate
+      console.warn(`[job-store] emit swallowed error for job ${jobId}:`, err instanceof Error ? err.message : err)
+    }
   }
 
   subscribe(jobId: string, listener: (event: SSEEvent) => void): () => void {

@@ -17,10 +17,11 @@ function agentOverallPct(agentIndex: number, agentInternalPct: number): number {
 
 export async function runDispatch(job: DDJob): Promise<void> {
   const { jobId, company, context } = job
+  console.log(`\n[dispatch] ── starting DD job ${jobId} for "${company}" ──`)
   jobStore.updateStatus(jobId, "running")
   jobStore.emit(jobId, { type: "started", jobId, company })
 
-  // Run all 4 agents in parallel
+  // Run all 4 agents — staggered by 3s each to avoid TPM rate limits
   const agentRunners: [AgentName, () => Promise<string>][] = [
     ["financial", () => runFinancialAgent(company, context)],
     ["risk", () => runRiskAgent(company, context)],
@@ -30,6 +31,9 @@ export async function runDispatch(job: DDJob): Promise<void> {
 
   const results = await Promise.allSettled(
     agentRunners.map(async ([name, runner], index) => {
+      // Stagger starts: 0s, 3s, 6s, 9s
+      if (index > 0) await new Promise((r) => setTimeout(r, index * 3000))
+
       jobStore.updateAgent(jobId, name, "running")
       jobStore.emit(jobId, {
         type: "agent_progress",
@@ -39,7 +43,9 @@ export async function runDispatch(job: DDJob): Promise<void> {
       })
 
       try {
+        console.log(`[dispatch] agent:${name} started`)
         const output = await runner()
+        console.log(`[dispatch] agent:${name} done — ${output.length} chars`)
         jobStore.updateAgent(jobId, name, "done", output)
         jobStore.emit(jobId, {
           type: "agent_progress",
@@ -51,6 +57,7 @@ export async function runDispatch(job: DDJob): Promise<void> {
         return output
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
+        console.error(`[dispatch] agent:${name} error — ${msg}`)
         jobStore.updateAgent(jobId, name, "error", "", msg)
         jobStore.emit(jobId, {
           type: "agent_progress",
@@ -68,6 +75,7 @@ export async function runDispatch(job: DDJob): Promise<void> {
   )
 
   // Synthesis
+  console.log(`[dispatch] all agents complete — starting synthesis`)
   jobStore.updateStatus(jobId, "synthesizing")
   jobStore.emit(jobId, { type: "synthesis_started" })
 
@@ -81,6 +89,7 @@ export async function runDispatch(job: DDJob): Promise<void> {
     )
 
     const reportId = uuidv4()
+    console.log(`[dispatch] ── report complete: ${reportId} (${report.length} chars) ──\n`)
     jobStore.setReport(jobId, report)
     jobStore.emit(jobId, {
       type: "report_complete",
