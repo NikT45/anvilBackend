@@ -83,6 +83,16 @@ export const ddPlugin = new Elysia()
           try { controller.close() } catch {}
         }
 
+        // Replay current state so late-connecting clients catch up
+        enqueue({ type: "started", jobId, company: job.company })
+        if (job.companyProfile) enqueue({ type: "intake_complete", profile: job.companyProfile })
+        for (const agent of AGENT_ORDER) {
+          const st = job.agents[agent].status
+          if (st !== "queued") {
+            enqueue({ type: "agent_progress", agent, status: st, overallPct: 0 })
+          }
+        }
+
         const unsubscribe = jobStore.subscribe(jobId, (event) => {
           if (closed) return
           enqueue(event)
