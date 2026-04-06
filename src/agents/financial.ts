@@ -91,7 +91,7 @@ const submitTool: Anthropic.Tool = {
   },
 }
 
-export async function runFinancialAgent(profile: CompanyProfile, context: string): Promise<FinancialSection> {
+export async function runFinancialAgent(profile: CompanyProfile, context: string, onActivity?: (desc: string) => void): Promise<FinancialSection> {
   const profileLine = profile.isPublic
     ? `Company: ${profile.name} (${profile.ticker ?? ""}, CIK: ${profile.cik ?? "unknown"}) — PUBLIC`
     : `Company: ${profile.name} — PRIVATE (no EDGAR data, use web sources)`
@@ -116,6 +116,7 @@ export async function runFinancialAgent(profile: CompanyProfile, context: string
     terminalTool: submitTool,
   })) {
     if (event.type === "submit") result = event.data as FinancialSection
+    if (event.type === "tool_activity") onActivity?.(event.description)
   }
 
   if (!result) throw new Error("Financial agent did not submit structured analysis")

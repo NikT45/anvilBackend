@@ -51,7 +51,7 @@ const submitTool: Anthropic.Tool = {
   },
 }
 
-export async function runRiskAgent(profile: CompanyProfile, context: string): Promise<RiskSection> {
+export async function runRiskAgent(profile: CompanyProfile, context: string, onActivity?: (desc: string) => void): Promise<RiskSection> {
   const profileLine = profile.isPublic
     ? `Company: ${profile.name} (${profile.ticker ?? ""}, CIK: ${profile.cik ?? "unknown"}) — PUBLIC`
     : `Company: ${profile.name} — PRIVATE`
@@ -75,6 +75,7 @@ export async function runRiskAgent(profile: CompanyProfile, context: string): Pr
     terminalTool: submitTool,
   })) {
     if (event.type === "submit") result = event.data as RiskSection
+    if (event.type === "tool_activity") onActivity?.(event.description)
   }
 
   if (!result) throw new Error("Risk agent did not submit structured analysis")

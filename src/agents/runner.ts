@@ -95,6 +95,7 @@ export async function* runAgent(params: RunAgentParams): AsyncGenerator<AgentEve
 
         // Normal tool
         console.log(`[runner:${agentLabel}] tool: ${block.name}`, JSON.stringify(block.input).slice(0, 120))
+        yield { type: "tool_activity" as const, tool: block.name, description: describeToolCall(block.name, block.input) }
         const handler = toolHandlers[block.name]
         if (!handler) {
           toolResults.push({
@@ -143,4 +144,22 @@ export async function* runAgent(params: RunAgentParams): AsyncGenerator<AgentEve
   }
 
   yield { type: "error", message: "Max iterations reached" }
+}
+
+function describeToolCall(name: string, input: unknown): string {
+  const inp = input as Record<string, unknown>
+  switch (name) {
+    case "edgar_search_company":
+      return `Searching SEC EDGAR for "${inp.query ?? "company"}"`
+    case "edgar_get_filings":
+      return `Pulling SEC filings (CIK ${inp.cik ?? "…"})`
+    case "edgar_get_xbrl_facts":
+      return `Fetching XBRL financial data`
+    case "edgar_get_filing_document":
+      return `Reading filing document`
+    case "web_search":
+      return `Searching: ${inp.query ?? "…"}`
+    default:
+      return `Running ${name}`
+  }
 }

@@ -79,11 +79,15 @@ export async function runDispatch(job: DDJob): Promise<void> {
     management?: ManagementSection
   } = {}
 
+  const activityCb = (agent: AgentName) => (desc: string) => {
+    jobStore.emit(jobId, { type: "tool_activity", agent, tool: "", description: desc })
+  }
+
   const researchRunners: Array<[AgentName, () => Promise<unknown>]> = [
-    ["financial", () => runFinancialAgent(profile, context)],
-    ["market", () => runMarketAgent(profile, context)],
-    ["risk", () => runRiskAgent(profile, context)],
-    ["management", () => runManagementAgent(profile, context)],
+    ["financial", () => runFinancialAgent(profile, context, activityCb("financial"))],
+    ["market", () => runMarketAgent(profile, context, activityCb("market"))],
+    ["risk", () => runRiskAgent(profile, context, activityCb("risk"))],
+    ["management", () => runManagementAgent(profile, context, activityCb("management"))],
   ]
 
   for (let i = 0; i < researchRunners.length; i++) {

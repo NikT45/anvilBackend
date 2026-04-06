@@ -11,6 +11,7 @@ export interface Message {
 
 export type AgentEvent =
   | { type: "text_delta"; delta: string }
+  | { type: "tool_activity"; tool: string; description: string }
   | { type: "dd_trigger"; company: string; context: string; toolUseId: string }
   | { type: "submit"; data: unknown }
   | { type: "done"; fullText: string }
@@ -199,5 +200,6 @@ export type SSEEvent =
   | { type: "started"; jobId: string; company: string }
   | { type: "intake_complete"; profile: CompanyProfile }
   | { type: "agent_progress"; agent: AgentName; status: AgentStatus; overallPct: number; preview?: string }
+  | { type: "tool_activity"; agent: AgentName; tool: string; description: string }
   | { type: "synthesis_started" }
   | { type: "report_complete"; reportId: string; report: StructuredReport; company: string }

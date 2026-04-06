@@ -63,7 +63,7 @@ const submitTool: Anthropic.Tool = {
   },
 }
 
-export async function runManagementAgent(profile: CompanyProfile, context: string): Promise<ManagementSection> {
+export async function runManagementAgent(profile: CompanyProfile, context: string, onActivity?: (desc: string) => void): Promise<ManagementSection> {
   const profileLine = profile.isPublic
     ? `Company: ${profile.name} (${profile.ticker ?? ""}, CIK: ${profile.cik ?? "unknown"}) — PUBLIC`
     : `Company: ${profile.name} — PRIVATE`
@@ -87,6 +87,7 @@ export async function runManagementAgent(profile: CompanyProfile, context: strin
     terminalTool: submitTool,
   })) {
     if (event.type === "submit") result = event.data as ManagementSection
+    if (event.type === "tool_activity") onActivity?.(event.description)
   }
 
   if (!result) throw new Error("Management agent did not submit structured analysis")
