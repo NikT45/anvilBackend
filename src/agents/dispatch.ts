@@ -41,6 +41,10 @@ export async function runDispatch(job: DDJob): Promise<void> {
   jobStore.updateStatus(jobId, "running")
   jobStore.emit(jobId, { type: "started", jobId, company })
 
+  const activityCb = (agent: AgentName) => (desc: string) => {
+    jobStore.emit(jobId, { type: "tool_activity", agent, tool: "", description: desc })
+  }
+
   // ─── Stage 0: Intake ────────────────────────────────────────────────────────
   let profile: CompanyProfile
   try {
@@ -52,7 +56,7 @@ export async function runDispatch(job: DDJob): Promise<void> {
       overallPct: cumulativePctBefore(0),
     })
     console.log(`[dispatch] intake started`)
-    profile = await runIntakeAgent(company, context)
+    profile = await runIntakeAgent(company, context, activityCb("intake"))
     console.log(`[dispatch] intake done — ${profile.isPublic ? "PUBLIC" : "PRIVATE"} (${profile.ticker ?? "no ticker"})`)
     jobStore.setCompanyProfile(jobId, profile)
     jobStore.updateAgent(jobId, "intake", "done", profile)
@@ -78,10 +82,6 @@ export async function runDispatch(job: DDJob): Promise<void> {
     risk?: RiskSection
     management?: ManagementSection
   } = {}
-
-  const activityCb = (agent: AgentName) => (desc: string) => {
-    jobStore.emit(jobId, { type: "tool_activity", agent, tool: "", description: desc })
-  }
 
   const researchRunners: Array<[AgentName, () => Promise<unknown>]> = [
     ["financial", () => runFinancialAgent(profile, context, activityCb("financial"))],

@@ -38,7 +38,7 @@ const submitCompanyProfileTool: Anthropic.Tool = {
   },
 }
 
-export async function runIntakeAgent(company: string, context: string): Promise<CompanyProfile> {
+export async function runIntakeAgent(company: string, context: string, onActivity?: (desc: string) => void): Promise<CompanyProfile> {
   const messages = [
     {
       role: "user" as const,
@@ -60,6 +60,7 @@ export async function runIntakeAgent(company: string, context: string): Promise<
     if (event.type === "submit") {
       profile = event.data as CompanyProfile
     }
+    if (event.type === "tool_activity") onActivity?.(event.description)
   }
 
   if (!profile) {
