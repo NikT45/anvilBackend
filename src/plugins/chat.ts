@@ -26,6 +26,8 @@ export const chatPlugin = new Elysia().post(
           runDispatch(job).catch(console.error)
 
           emit({ type: "dd_triggered", company: event.company, ddJobId })
+        } else if (event.type === "tool_activity") {
+          emit({ type: "tool_activity", tool: event.tool, description: event.description })
         } else if (event.type === "done") {
           console.log(`[chat] done`)
           emit({ type: "done" })

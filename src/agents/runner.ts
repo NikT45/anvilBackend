@@ -152,10 +152,10 @@ function describeToolCall(name: string, input: unknown): string {
     case "edgar_search_company":
       return `Searching SEC EDGAR for "${inp.query ?? "company"}"`
     case "edgar_get_filings":
-      return `Pulling SEC filings (CIK ${inp.cik ?? "…"})`
-    case "edgar_get_xbrl_facts":
-      return `Fetching XBRL financial data`
-    case "edgar_get_filing_document":
+      return `Pulling ${inp.form_type ?? "SEC"} filings (CIK ${inp.cik ?? "…"})`
+    case "edgar_get_company_facts":
+      return `Fetching ${inp.concept ?? "financial data"} from XBRL`
+    case "edgar_get_filing_text":
       return `Reading filing document`
     case "web_search":
       return `Searching: ${inp.query ?? "…"}`

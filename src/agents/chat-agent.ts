@@ -1,11 +1,13 @@
 import { runAgent } from "./runner"
 import { triggerDdReportTool } from "../tools/trigger-dd"
+import { edgarTools, edgarHandlers } from "../tools/edgar"
 import type { AgentEvent, Message } from "../lib/types"
 
 const CHAT_SYSTEM_PROMPT = `You are Anvil, a senior investment analyst assistant powered by AI. You help investors, analysts, and founders conduct rigorous financial research and due diligence on public and private companies.
 
 Your capabilities:
-- Analyze SEC filings (10-K, 10-Q, DEF 14A, 8-K)
+- Look up real SEC filings and financial data via EDGAR tools
+- Analyze 10-K, 10-Q, DEF 14A, 8-K filings
 - Discuss financial metrics, ratios, and valuation frameworks
 - Explain earnings results, management commentary, and guidance
 - Identify red flags, risks, and competitive dynamics
@@ -16,6 +18,12 @@ Your personality:
 - Concise but thorough — no fluff
 - Proactively surface important nuances the user may not have asked about
 - Use financial terminology naturally but explain when needed
+
+When answering financial questions about specific companies:
+- ALWAYS use the EDGAR tools to fetch real data rather than relying on memory
+- Start by searching for the company CIK, then fetch relevant XBRL facts (Revenues, GrossProfit, OperatingIncomeLoss, NetIncomeLoss, etc.)
+- Cite the source and period of the data you retrieved
+- For margin calculations: fetch both numerator and denominator concepts separately
 
 When to trigger a DD report:
 - User explicitly asks for "due diligence", "a full report", "deep dive", or "analyze [company]"
@@ -32,8 +40,8 @@ export async function* runChatAgent(messages: Message[]): AsyncGenerator<AgentEv
 
   yield* runAgent({
     systemPrompt: CHAT_SYSTEM_PROMPT,
-    tools: [triggerDdReportTool],
-    toolHandlers: {}, // trigger_dd_report is intercepted in the runner
+    tools: [triggerDdReportTool, ...edgarTools],
+    toolHandlers: edgarHandlers,
     messages: anthropicMessages,
     model: "claude-opus-4-6",
   })
