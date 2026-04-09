@@ -3,6 +3,7 @@ import { triggerDdReportTool } from "../tools/trigger-dd"
 import { edgarTools, edgarHandlers } from "../tools/edgar"
 import { marketTools, marketHandlers } from "../tools/market"
 import { documentTools, documentHandlers } from "../tools/document"
+import { tavilySearchTool, tavilyHandlers } from "../tools/tavily"
 import type { AgentEvent, Message } from "../lib/types"
 
 const CHAT_SYSTEM_PROMPT = `You are Anvil, a senior investment analyst assistant powered by AI. You help investors, analysts, and founders conduct rigorous financial research and due diligence on public and private companies.
@@ -25,8 +26,9 @@ Your personality:
 When answering financial questions about specific companies:
 - Use get_stock_quote for current price, market cap, P/E, and valuation multiples
 - Use EDGAR tools to fetch real financial data (revenues, gross profit, operating income, net income, etc.) rather than relying on memory
+- Use web_search for recent news, earnings reactions, M&A rumors, regulatory developments, analyst commentary, or anything time-sensitive
 - Use search_documents if the user references uploaded files
-- Always cite your sources inline using markdown links, e.g. [MSFT 10-K 2024](https://www.sec.gov/...)
+- Always cite your sources inline using markdown links, e.g. [MSFT 10-K 2024](https://www.sec.gov/...) or [Reuters](https://reuters.com/...)
 - For margin calculations: fetch both numerator and denominator separately from XBRL
 
 When to trigger a DD report:
@@ -44,8 +46,8 @@ export async function* runChatAgent(messages: Message[]): AsyncGenerator<AgentEv
 
   yield* runAgent({
     systemPrompt: CHAT_SYSTEM_PROMPT,
-    tools: [triggerDdReportTool, ...edgarTools, ...marketTools, ...documentTools],
-    toolHandlers: { ...edgarHandlers, ...marketHandlers, ...documentHandlers },
+    tools: [triggerDdReportTool, ...edgarTools, ...marketTools, ...documentTools, tavilySearchTool],
+    toolHandlers: { ...edgarHandlers, ...marketHandlers, ...documentHandlers, ...tavilyHandlers },
     messages: anthropicMessages,
     model: "claude-opus-4-6",
   })

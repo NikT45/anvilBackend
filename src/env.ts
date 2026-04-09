@@ -11,4 +11,5 @@ export const env = {
   FRONTEND_URL: process.env.FRONTEND_URL ?? "http://localhost:3001",
   SUPABASE_URL: process.env.SUPABASE_URL ?? "",
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
+  VOYAGE_API_KEY: process.env.VOYAGE_API_KEY ?? "",
 }

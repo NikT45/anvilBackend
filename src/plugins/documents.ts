@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia"
 import { supabaseAdmin } from "../lib/supabase-backend"
+import { embedTexts } from "../lib/voyage"
 
 const CHUNK_SIZE = 1200
 const CHUNK_OVERLAP = 150
@@ -21,7 +22,7 @@ async function extractText(file: File): Promise<string> {
   const name = file.name.toLowerCase()
   if (name.endsWith(".pdf")) {
     const buffer = await file.arrayBuffer()
-    const pdfParse = (await import("pdf-parse")).default
+    const pdfParse = require("pdf-parse")
     const result = await pdfParse(Buffer.from(buffer))
     return result.text
   }
@@ -53,16 +54,26 @@ export const documentsPlugin = new Elysia()
         if (docErr) throw docErr
 
         const chunks = chunkText(text)
+
+        // Embed all chunks via Voyage AI (finance-tuned model)
+        let embeddings: number[][] = []
+        try {
+          embeddings = await embedTexts(chunks)
+        } catch (e) {
+          console.warn("[documents] embedding failed, storing without vectors:", e)
+        }
+
         const rows = chunks.map((content, i) => ({
           document_id: doc.id,
           content,
           chunk_index: i,
+          embedding: embeddings[i] ? `[${embeddings[i].join(",")}]` : null,
         }))
 
         const { error: chunkErr } = await supabaseAdmin.from("document_chunks").insert(rows)
         if (chunkErr) throw chunkErr
 
-        console.log(`[documents] uploaded "${file.name}" → ${chunks.length} chunks`)
+        console.log(`[documents] uploaded "${file.name}" → ${chunks.length} chunks, embedded: ${embeddings.length > 0}`)
         return { documentId: doc.id, name: file.name, chunks: chunks.length }
       } catch (err) {
         console.error("[documents] upload error:", err)

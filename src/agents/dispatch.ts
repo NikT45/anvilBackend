@@ -5,6 +5,8 @@ import { runRiskAgent } from "./risk"
 import { runManagementAgent } from "./management"
 import { runSynthesisAgent } from "./synthesis"
 import { jobStore } from "../lib/job-store"
+import { supabaseAdmin } from "../lib/supabase-backend"
+import { embedTexts } from "../lib/voyage"
 import { v4 as uuidv4 } from "uuid"
 import type {
   DDJob,
@@ -192,6 +194,11 @@ export async function runDispatch(job: DDJob): Promise<void> {
       report,
       company: profile.name,
     })
+
+    // Fire-and-forget: embed the report into the document store for future RAG queries
+    embedReport(reportId, profile.name, report).catch((e) =>
+      console.warn("[dispatch] report embedding failed:", e)
+    )
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`[dispatch] synthesis error — ${msg}`)
@@ -199,6 +206,105 @@ export async function runDispatch(job: DDJob): Promise<void> {
     jobStore.updateAgent(jobId, "synthesis", "error", null, msg)
     jobStore.emit(jobId, { type: "error", message: `Synthesis failed: ${msg}`, agent: "synthesis" })
   }
+}
+
+// ─── Report → document embedding ─────────────────────────────────────────────
+
+function reportToText(company: string, report: StructuredReport): string {
+  const r = report
+  const lines: string[] = [
+    `Due Diligence Report: ${company}`,
+    `Generated: ${r.metadata.generatedAt}`,
+    `Verdict: ${r.executiveSummary.verdict}`,
+    ``,
+    `EXECUTIVE SUMMARY`,
+    r.executiveSummary.thesis,
+    r.executiveSummary.verdictRationale,
+    ...r.executiveSummary.keyPoints,
+    `What would change verdict: ${r.executiveSummary.whatWouldChangeVerdict}`,
+    ``,
+    `COMPANY OVERVIEW`,
+    `${r.company.name} | ${r.company.ticker ?? ""} | ${r.company.sector ?? ""} | ${r.company.industry ?? ""}`,
+    r.company.description,
+    `HQ: ${r.company.hq ?? "N/A"} | Founded: ${r.company.founded ?? "N/A"} | Employees: ${r.company.employees ?? "N/A"}`,
+    ``,
+    `FINANCIAL ANALYSIS`,
+    r.financial.summary,
+    ...r.financial.keyMetrics.map((m) => `${m.label}: ${m.value}${m.note ? ` (${m.note})` : ""}`),
+    `Gross Margin: ${r.financial.profitability.grossMargin ?? "N/A"} | Operating Margin: ${r.financial.profitability.operatingMargin ?? "N/A"} | Net Margin: ${r.financial.profitability.netMargin ?? "N/A"}`,
+    r.financial.profitability.commentary,
+    r.financial.balanceSheet.commentary,
+    r.financial.cashFlow.commentary,
+    `Strengths: ${r.financial.strengths.join(", ")}`,
+    `Concerns: ${r.financial.concerns.join(", ")}`,
+    ``,
+    `MARKET ANALYSIS`,
+    r.market.summary,
+    `Positioning: ${r.market.positioning} — ${r.market.positioningRationale}`,
+    `Moat: ${r.market.moat.strength} — ${r.market.moat.description}`,
+    `TAM: ${r.market.tamEstimate ?? "N/A"} — ${r.market.tamRationale ?? ""}`,
+    `Competitors: ${r.market.competitors.map((c) => c.name).join(", ")}`,
+    `Trends: ${r.market.marketTrends.join("; ")}`,
+    ``,
+    `RISK ASSESSMENT`,
+    r.risk.summary,
+    `Overall Risk: ${r.risk.overallRiskLevel}`,
+    ...r.risk.factors.map((f) => `[${f.severity}] ${f.category} — ${f.name}: ${f.description}`),
+    `Red Flags: ${r.risk.redFlags.join("; ")}`,
+    ``,
+    `MANAGEMENT`,
+    r.management.summary,
+    `Rating: ${r.management.rating} — ${r.management.ratingRationale}`,
+    ...r.management.keyExecutives.map((e) => `${e.name}, ${e.title}: ${e.background}`),
+    r.management.compensation,
+    r.management.trackRecord,
+    ``,
+    `KEY QUESTIONS`,
+    ...r.keyQuestions,
+  ]
+  return lines.filter(Boolean).join("\n")
+}
+
+async function embedReport(reportId: string, company: string, report: StructuredReport): Promise<void> {
+  const text = reportToText(company, report)
+  const CHUNK = 1200
+  const OVERLAP = 150
+  const chunks: string[] = []
+  let start = 0
+  while (start < text.length) {
+    const end = Math.min(start + CHUNK, text.length)
+    const chunk = text.slice(start, end).trim()
+    if (chunk.length > 50) chunks.push(chunk)
+    if (end >= text.length) break
+    start = end - OVERLAP
+  }
+
+  const embeddings = await embedTexts(chunks)
+
+  const { data: doc, error: docErr } = await supabaseAdmin
+    .from("documents")
+    .insert({
+      name: `DD Report: ${company} (${new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" })})`,
+      size: text.length,
+      mime_type: "application/x-dd-report",
+      user_id: null,
+    })
+    .select()
+    .single()
+
+  if (docErr) throw docErr
+
+  const rows = chunks.map((content, i) => ({
+    document_id: doc.id,
+    content,
+    chunk_index: i,
+    embedding: embeddings[i] ? `[${embeddings[i].join(",")}]` : null,
+  }))
+
+  const { error: chunkErr } = await supabaseAdmin.from("document_chunks").insert(rows)
+  if (chunkErr) throw chunkErr
+
+  console.log(`[dispatch] embedded report ${reportId} → ${chunks.length} chunks`)
 }
 
 // ─── Fallbacks for when agents fail ─────────────────────────────────────────

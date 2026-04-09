@@ -11,7 +11,7 @@
     "@supabase/supabase-js": "^2.103.0",
     "@tavily/core": "^0.7.2",
     "elysia": "latest",
-    "pdf-parse": "^2.4.5",
+    "pdf-parse": "1.1.1",
     "uuid": "^13.0.0"
   },
   "devDependencies": {

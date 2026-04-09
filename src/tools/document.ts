@@ -1,5 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk"
 import { supabaseAdmin } from "../lib/supabase-backend"
+import { embedQuery } from "../lib/voyage"
 
 export const documentTools: Anthropic.Tool[] = [
   {
@@ -11,7 +12,7 @@ export const documentTools: Anthropic.Tool[] = [
       properties: {
         query: {
           type: "string",
-          description: "Keywords or phrase to search for in uploaded documents",
+          description: "Natural language question or keywords to search for in uploaded documents",
         },
       },
       required: ["query"],
@@ -22,18 +23,44 @@ export const documentTools: Anthropic.Tool[] = [
 export async function searchDocuments(input: unknown): Promise<string> {
   const { query } = input as { query: string }
 
-  const { data, error } = await supabaseAdmin
+  // Debug: check total chunk count
+  const { count } = await supabaseAdmin.from("document_chunks").select("*", { count: "exact", head: true })
+  console.log(`[search_documents] total chunks in DB: ${count}, query: "${query}"`)
+
+  // Try vector search first (semantic, higher quality)
+  try {
+    const embedding = await embedQuery(query)
+    const { data, error } = await supabaseAdmin.rpc("match_document_chunks", {
+      query_embedding: `[${embedding.join(",")}]`,
+      match_count: 5,
+    })
+    console.log(`[search_documents] vector search → rows: ${data?.length ?? 0}, error: ${error?.message ?? "none"}`)
+
+    if (!error && data && data.length > 0) {
+      return (data as any[])
+        .map((row) => `[Source: ${row.document_name ?? "Unknown"}]\n${row.content}`)
+        .join("\n\n---\n\n")
+    }
+  } catch (e) {
+    console.warn("[search_documents] vector search failed, falling back to FTS:", e)
+  }
+
+  // Fallback: simple keyword scan across all chunks
+  const { data: allData, error: allError } = await supabaseAdmin
     .from("document_chunks")
     .select("content, documents!inner(name)")
-    .textSearch("search_vector", query, { type: "websearch" })
+    .ilike("content", `%${query.split(" ")[0]}%`)
     .limit(5)
 
-  if (error) return `Document search failed: ${error.message}`
-  if (!data || data.length === 0) return "No relevant content found in uploaded documents."
+  console.log(`[search_documents] keyword fallback → rows: ${allData?.length ?? 0}, error: ${allError?.message ?? "none"}`)
 
-  return data
-    .map((row: any) => `[Source: ${(row.documents as any)?.name ?? "Unknown document"}]\n${row.content}`)
-    .join("\n\n---\n\n")
+  if (!allError && allData && allData.length > 0) {
+    return allData
+      .map((row: any) => `[Source: ${(row.documents as any)?.name ?? "Unknown document"}]\n${row.content}`)
+      .join("\n\n---\n\n")
+  }
+
+  return "No relevant content found in uploaded documents."
 }
 
 export const documentHandlers: Record<string, (input: unknown) => Promise<unknown>> = {
