@@ -89,7 +89,7 @@ export async function edgarSearchCompany(input: unknown): Promise<string> {
   const results = hits.slice(0, 5).map((h: any) => ({
     company: h._source?.entity_name,
     cik: h._source?.entity_id,
-    ticker: h._source?.file_date,
+    edgarUrl: `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${h._source?.entity_id}&type=10-K`,
   }))
 
   return JSON.stringify(results, null, 2)
@@ -125,7 +125,13 @@ export async function edgarGetFilings(input: unknown): Promise<string> {
   }
 
   if (matches.length === 0) return `No ${form_type} filings found for CIK ${cik}`
-  return JSON.stringify(matches, null, 2)
+
+  const withUrls = matches.map((m: any) => ({
+    ...m,
+    url: `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${cik}&type=${form_type}&dateb=&owner=include&count=10`,
+    directUrl: `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${m.accession_number.replace(/-/g, "")}/${m.accession_number}-index.htm`,
+  }))
+  return JSON.stringify(withUrls, null, 2)
 }
 
 export async function edgarGetCompanyFacts(input: unknown): Promise<string> {

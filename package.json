@@ -8,11 +8,14 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
     "@elysiajs/cors": "^1.4.1",
+    "@supabase/supabase-js": "^2.103.0",
     "@tavily/core": "^0.7.2",
     "elysia": "latest",
+    "pdf-parse": "^2.4.5",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
+    "@types/pdf-parse": "^1.1.5",
     "@types/uuid": "^11.0.0",
     "bun-types": "latest",
     "typescript": "^6.0.2"

@@ -157,6 +157,10 @@ function describeToolCall(name: string, input: unknown): string {
       return `Fetching ${inp.concept ?? "financial data"} from XBRL`
     case "edgar_get_filing_text":
       return `Reading filing document`
+    case "get_stock_quote":
+      return `Getting live quote for ${inp.ticker ?? "ticker"}`
+    case "search_documents":
+      return `Searching uploaded documents for "${inp.query ?? "…"}"`
     case "web_search":
       return `Searching: ${inp.query ?? "…"}`
     default:

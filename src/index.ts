@@ -2,12 +2,14 @@ import { Elysia } from "elysia"
 import { corsPlugin } from "./plugins/cors"
 import { chatPlugin } from "./plugins/chat"
 import { ddPlugin } from "./plugins/dd"
+import { documentsPlugin } from "./plugins/documents"
 import { env } from "./env"
 
 const app = new Elysia()
   .use(corsPlugin)
   .use(chatPlugin)
   .use(ddPlugin)
+  .use(documentsPlugin)
   .get("/health", () => ({ status: "ok", ts: Date.now() }))
   .listen(env.PORT)
 
