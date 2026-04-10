@@ -1,6 +1,7 @@
 import { Elysia, t } from "elysia"
 import { supabaseAdmin } from "../lib/supabase-backend"
 import { embedTexts } from "../lib/voyage"
+import { requireAuth } from "../lib/auth"
 
 const CHUNK_SIZE = 1200
 const CHUNK_OVERLAP = 150
@@ -33,10 +34,16 @@ export const documentsPlugin = new Elysia()
 
   .post(
     "/documents/upload",
-    async ({ body, set }) => {
-      const file = body.file as File
-      const userId = (body as any).userId as string | undefined
+    async ({ body, headers, set }) => {
+      let userId: string
+      try {
+        userId = await requireAuth(headers["authorization"])
+      } catch {
+        set.status = 401
+        return { error: "Unauthorized" }
+      }
 
+      const file = body.file as File
       try {
         const rawText = await extractText(file)
         const text = rawText.replace(/\s+/g, " ").trim()
@@ -81,28 +88,47 @@ export const documentsPlugin = new Elysia()
         return { error: err instanceof Error ? err.message : "Upload failed" }
       }
     },
-    { body: t.Object({ file: t.File(), userId: t.Optional(t.String()) }) }
+    { body: t.Object({ file: t.File() }) }
   )
 
   .get(
     "/documents",
-    async ({ query }) => {
-      let q = supabaseAdmin
+    async ({ headers, set }) => {
+      let userId: string
+      try {
+        userId = await requireAuth(headers["authorization"])
+      } catch {
+        set.status = 401
+        return { error: "Unauthorized" }
+      }
+
+      const { data, error } = await supabaseAdmin
         .from("documents")
         .select("id, name, size, mime_type, created_at")
+        .eq("user_id", userId)
         .order("created_at", { ascending: false })
 
-      if (query.userId) q = (q as any).eq("user_id", query.userId)
-
-      const { data, error } = await q
       if (error) return { error: error.message }
       return data ?? []
-    },
-    { query: t.Object({ userId: t.Optional(t.String()) }) }
+    }
   )
 
-  .delete("/documents/:id", async ({ params, set }) => {
-    const { error } = await supabaseAdmin.from("documents").delete().eq("id", params.id)
+  .delete("/documents/:id", async ({ params, headers, set }) => {
+    let userId: string
+    try {
+      userId = await requireAuth(headers["authorization"])
+    } catch {
+      set.status = 401
+      return { error: "Unauthorized" }
+    }
+
+    // Only delete if it belongs to this user
+    const { error } = await supabaseAdmin
+      .from("documents")
+      .delete()
+      .eq("id", params.id)
+      .eq("user_id", userId)
+
     if (error) {
       set.status = 500
       return { error: error.message }

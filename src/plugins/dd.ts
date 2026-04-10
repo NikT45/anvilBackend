@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from "uuid"
 import { jobStore } from "../lib/job-store"
 import { runDispatch } from "../agents/dispatch"
 import { formatSSE } from "../lib/sse"
+import { requireAuth } from "../lib/auth"
 import type { SSEEvent, AgentName } from "../lib/types"
 
 const AGENT_ORDER: AgentName[] = ["intake", "financial", "market", "risk", "management", "synthesis"]
@@ -10,9 +11,15 @@ const AGENT_ORDER: AgentName[] = ["intake", "financial", "market", "risk", "mana
 export const ddPlugin = new Elysia()
   .post(
     "/dd",
-    ({ body }) => {
+    async ({ body, headers, set }) => {
+      let userId: string
+      try {
+        userId = await requireAuth(headers["authorization"])
+      } catch {
+        set.status = 401
+        return { error: "Unauthorized" }
+      }
       const { company, context = "" } = body
-      const userId = (body as any).userId as string | undefined
       const ddJobId = uuidv4()
       const job = jobStore.create(ddJobId, company, context, userId)
       runDispatch(job).catch(console.error)
@@ -22,7 +29,6 @@ export const ddPlugin = new Elysia()
       body: t.Object({
         company: t.String(),
         context: t.Optional(t.String()),
-        userId: t.Optional(t.String()),
       }),
     }
   )

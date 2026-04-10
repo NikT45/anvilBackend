@@ -3,18 +3,26 @@ import { runChatAgent } from "../agents/chat-agent"
 import { createSSEStream } from "../lib/sse"
 import { jobStore } from "../lib/job-store"
 import { runDispatch } from "../agents/dispatch"
+import { requireAuth } from "../lib/auth"
 import { v4 as uuidv4 } from "uuid"
 import type { Message } from "../lib/types"
 
 export const chatPlugin = new Elysia().post(
   "/chat",
-  ({ body }) => {
+  ({ body, headers }) => {
     const messages = body.messages as Message[]
-    const userId = (body as any).userId as string | undefined
     const lastMsg = messages[messages.length - 1]?.content?.slice(0, 80) ?? ""
-    console.log(`[chat] POST /chat — ${messages.length} message(s), userId: ${userId ?? "anon"}, last: "${lastMsg}"`)
 
     return createSSEStream(async (emit) => {
+      let userId: string
+      try {
+        userId = await requireAuth(headers["authorization"])
+      } catch {
+        emit({ type: "error", message: "Unauthorized" })
+        return
+      }
+      console.log(`[chat] POST /chat — ${messages.length} message(s), userId: ${userId}, last: "${lastMsg}"`)
+
       for await (const event of runChatAgent(messages, userId)) {
         if (event.type === "text_delta") {
           emit({ type: "text_delta", delta: event.delta })
@@ -47,7 +55,6 @@ export const chatPlugin = new Elysia().post(
           content: t.String(),
         })
       ),
-      userId: t.Optional(t.String()),
     }),
   }
 )
