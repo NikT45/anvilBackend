@@ -20,20 +20,21 @@ export const documentTools: Anthropic.Tool[] = [
   },
 ]
 
-export async function searchDocuments(input: unknown): Promise<string> {
+export async function searchDocuments(input: unknown, userId?: string): Promise<string> {
   const { query } = input as { query: string }
 
-  // Debug: check total chunk count
-  const { count } = await supabaseAdmin.from("document_chunks").select("*", { count: "exact", head: true })
-  console.log(`[search_documents] total chunks in DB: ${count}, query: "${query}"`)
+  console.log(`[search_documents] query: "${query}", userId: ${userId ?? "none"}`)
 
   // Try vector search first (semantic, higher quality)
   try {
     const embedding = await embedQuery(query)
-    const { data, error } = await supabaseAdmin.rpc("match_document_chunks", {
+    const rpcParams: Record<string, unknown> = {
       query_embedding: `[${embedding.join(",")}]`,
       match_count: 5,
-    })
+    }
+    if (userId) rpcParams.filter_user_id = userId
+
+    const { data, error } = await supabaseAdmin.rpc("match_document_chunks", rpcParams)
     console.log(`[search_documents] vector search → rows: ${data?.length ?? 0}, error: ${error?.message ?? "none"}`)
 
     if (!error && data && data.length > 0) {
@@ -42,15 +43,29 @@ export async function searchDocuments(input: unknown): Promise<string> {
         .join("\n\n---\n\n")
     }
   } catch (e) {
-    console.warn("[search_documents] vector search failed, falling back to FTS:", e)
+    console.warn("[search_documents] vector search failed, falling back to keyword scan:", e)
   }
 
-  // Fallback: simple keyword scan across all chunks
-  const { data: allData, error: allError } = await supabaseAdmin
+  // Fallback: keyword scan scoped to user's documents
+  let userDocIds: string[] = []
+  if (userId) {
+    const { data: docs } = await supabaseAdmin
+      .from("documents")
+      .select("id")
+      .eq("user_id", userId)
+    userDocIds = docs?.map((d: any) => d.id) ?? []
+    if (userDocIds.length === 0) return "No relevant content found in uploaded documents."
+  }
+
+  let q = supabaseAdmin
     .from("document_chunks")
     .select("content, documents!inner(name)")
     .ilike("content", `%${query.split(" ")[0]}%`)
     .limit(5)
+
+  if (userDocIds.length > 0) q = (q as any).in("document_id", userDocIds)
+
+  const { data: allData, error: allError } = await q
 
   console.log(`[search_documents] keyword fallback → rows: ${allData?.length ?? 0}, error: ${allError?.message ?? "none"}`)
 

@@ -181,6 +181,7 @@ export interface DDJob {
   jobId: string
   company: string
   context: string
+  userId?: string
   status: DDJobStatus
   agents: Record<AgentName, AgentResult>
   companyProfile?: CompanyProfile

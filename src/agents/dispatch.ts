@@ -196,7 +196,7 @@ export async function runDispatch(job: DDJob): Promise<void> {
     })
 
     // Fire-and-forget: embed the report into the document store for future RAG queries
-    embedReport(reportId, profile.name, report).catch((e) =>
+    embedReport(reportId, profile.name, report, job.userId).catch((e) =>
       console.warn("[dispatch] report embedding failed:", e)
     )
   } catch (err) {
@@ -265,7 +265,7 @@ function reportToText(company: string, report: StructuredReport): string {
   return lines.filter(Boolean).join("\n")
 }
 
-async function embedReport(reportId: string, company: string, report: StructuredReport): Promise<void> {
+async function embedReport(reportId: string, company: string, report: StructuredReport, userId?: string): Promise<void> {
   const text = reportToText(company, report)
   const CHUNK = 1200
   const OVERLAP = 150
@@ -287,7 +287,7 @@ async function embedReport(reportId: string, company: string, report: Structured
       name: `DD Report: ${company} (${new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" })})`,
       size: text.length,
       mime_type: "application/x-dd-report",
-      user_id: null,
+      user_id: userId ?? null,
     })
     .select()
     .single()

@@ -2,7 +2,7 @@ import { runAgent } from "./runner"
 import { triggerDdReportTool } from "../tools/trigger-dd"
 import { edgarTools, edgarHandlers } from "../tools/edgar"
 import { marketTools, marketHandlers } from "../tools/market"
-import { documentTools, documentHandlers } from "../tools/document"
+import { documentTools, documentHandlers, searchDocuments } from "../tools/document"
 import { tavilySearchTool, tavilyHandlers } from "../tools/tavily"
 import type { AgentEvent, Message } from "../lib/types"
 
@@ -38,16 +38,21 @@ When to trigger a DD report:
 
 Keep chat responses focused and conversational. Save comprehensive analysis for the DD pipeline.`
 
-export async function* runChatAgent(messages: Message[]): AsyncGenerator<AgentEvent> {
+export async function* runChatAgent(messages: Message[], userId?: string): AsyncGenerator<AgentEvent> {
   const anthropicMessages = messages.map((m) => ({
     role: m.role as "user" | "assistant",
     content: m.content,
   }))
 
+  // Scope document search to the current user
+  const scopedDocumentHandlers = {
+    search_documents: (input: unknown) => searchDocuments(input, userId),
+  }
+
   yield* runAgent({
     systemPrompt: CHAT_SYSTEM_PROMPT,
     tools: [triggerDdReportTool, ...edgarTools, ...marketTools, ...documentTools, tavilySearchTool],
-    toolHandlers: { ...edgarHandlers, ...marketHandlers, ...documentHandlers, ...tavilyHandlers },
+    toolHandlers: { ...edgarHandlers, ...marketHandlers, ...scopedDocumentHandlers, ...tavilyHandlers },
     messages: anthropicMessages,
     model: "claude-opus-4-6",
   })

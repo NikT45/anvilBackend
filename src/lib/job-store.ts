@@ -12,7 +12,7 @@ class DDJobStore {
   private jobs = new Map<string, DDJob>()
   private emitters = new Map<string, EventEmitter>()
 
-  create(jobId: string, company: string, context: string): DDJob {
+  create(jobId: string, company: string, context: string, userId?: string): DDJob {
     const emptyResult = (name: AgentName) => ({
       name,
       status: "queued" as AgentStatus,
@@ -22,6 +22,7 @@ class DDJobStore {
       jobId,
       company,
       context,
+      userId,
       status: "pending",
       agents: {
         intake: emptyResult("intake"),

@@ -12,8 +12,9 @@ export const ddPlugin = new Elysia()
     "/dd",
     ({ body }) => {
       const { company, context = "" } = body
+      const userId = (body as any).userId as string | undefined
       const ddJobId = uuidv4()
-      const job = jobStore.create(ddJobId, company, context)
+      const job = jobStore.create(ddJobId, company, context, userId)
       runDispatch(job).catch(console.error)
       return { ddJobId, company, status: "started" }
     },
@@ -21,6 +22,7 @@ export const ddPlugin = new Elysia()
       body: t.Object({
         company: t.String(),
         context: t.Optional(t.String()),
+        userId: t.Optional(t.String()),
       }),
     }
   )
